@@ -112,7 +112,7 @@ int main()
     stu2.display();
     p->display();
     printf("%s\n",p->school);
-
+    
     double d = 3.1415926;
     int x = static_cast<int>(d);
     student stu[3] = 
