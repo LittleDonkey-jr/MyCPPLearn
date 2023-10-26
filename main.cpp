@@ -1,126 +1,91 @@
+#include "threadpool.h"
 #include <iostream>
-#include <thread>
-#include <chrono>
-using namespace std;
+#include <windows.h>
 
 
-static bool is_Finished = false;
-
-void DoWork() {
-    using namespace std::literals::chrono_literals; //等待时间的操作可以先using一个命名空间，为 1s 提供作用域
-    while (!is_Finished) {
-        std::cout << "hello" << std::endl;
-        std::this_thread::sleep_for(1s);    //等待一秒
-    }
+void fun1(int slp)
+{
+	printf("  hello, fun1 !  %d\n" ,std::this_thread::get_id());
+	if (slp>0) {
+		printf(" ======= fun1 sleep %d  =========  %d\n",slp, std::this_thread::get_id());
+		std::this_thread::sleep_for(std::chrono::milliseconds(slp));
+		//Sleep(slp );
+	}
 }
 
-class Timer
-{
-    public:
-    std::chrono::time_point<std::chrono::high_resolution_clock> start,end;
-    std::chrono::duration<float> duration;
-
-    Timer();
-    ~Timer();
-
+struct gfun {
+	int operator()(int n) {
+		printf("%d  hello, gfun !  %d\n" ,n, std::this_thread::get_id() );
+		return 42;
+	}
 };
 
-Timer::Timer()
-{
-    start = std::chrono::high_resolution_clock::now();
-}
-
-Timer::~Timer()
-{
-    end = std::chrono::high_resolution_clock::now();
-    duration = end - start;
-    
-    float ms = duration.count() * 1000;
-    std::cout << "Timer took " << ms << " ms" << std::endl;
-}
-
-
-class student
-{
-private:
-    int num;
-    int sex;
-    int score;
+class A {    //函数必须是 static 的才能使用线程池
 public:
-    char school[20] = "ChangAnUniversity\n";
-    void init();
-    student();
-    student(int x,int y,int z);
-    void display();
-    ~student();
+	static int Afun(int n = 0) {
+		std::cout << n << "  hello, Afun !  " << std::this_thread::get_id() << std::endl;
+		return n;
+	}
+
+	static std::string Bfun(int n, std::string str, char c) {
+		std::cout << n << "  hello, Bfun !  "<< str.c_str() <<"  " << (int)c <<"  " << std::this_thread::get_id() << std::endl;
+		return str;
+	}
 };
-
-void student::init()
-{
-    num = 0;
-    sex = 0;
-    score = 0;
-}
-
-student::student()
-{
-    num = 1;
-    sex = 1;
-    score = 1;  
-
-}
-student::student(int x,int y,int z)
-{
-    num = x;
-    sex = y;
-    score = z;
-}
-
-void student::display()
-{
-    printf("%d\n",num);
-    printf("%d\n",sex);
-    printf("%d\n",score);
-}
-student::~student()
-{
-    printf("destroy the object\n");
-}
 
 int main()
-{
-    Timer timer;
+	try {
+		std::threadpool executor{ 50 };
+		A a;
+		std::future<void> ff = executor.commit(fun1,0);
+		std::future<int> fg = executor.commit(gfun{},0);
+		std::future<int> gg = executor.commit(a.Afun, 9999); //IDE提示错误,但可以编译运行
+		std::future<std::string> gh = executor.commit(A::Bfun, 9998,"mult args", 123);
+		std::future<std::string> fh = executor.commit([]()->std::string { std::cout << "hello, fh !  " << std::this_thread::get_id() << std::endl; return "hello,fh ret !"; });
+
+		std::cout << " =======  sleep ========= " << std::this_thread::get_id() << std::endl;
+		std::this_thread::sleep_for(std::chrono::microseconds(900));
+
+		for (int i = 0; i < 50; i++) {
+			executor.commit(fun1,i*100 );
+		}
+		std::cout << " =======  commit all ========= " << std::this_thread::get_id()<< " idlsize="<<executor.idlCount() << std::endl;
+
+		std::cout << " =======  sleep ========= " << std::this_thread::get_id() << std::endl;
+		std::this_thread::sleep_for(std::chrono::seconds(3));
+
+		ff.get(); //调用.get()获取返回值会等待线程执行完,获取返回值
+		std::cout << fg.get() << "  " << fh.get().c_str()<< "  " << std::this_thread::get_id() << std::endl;
+
+		std::cout << " =======  sleep ========= " << std::this_thread::get_id() << std::endl;
+		std::this_thread::sleep_for(std::chrono::seconds(3));
+
+		std::cout << " =======  fun1,55 ========= " << std::this_thread::get_id() << std::endl;
+		executor.commit(fun1,55).get();    //调用.get()获取返回值会等待线程执行完
+
+		std::cout << "end... " << std::this_thread::get_id() << std::endl;
 
 
-    std::thread worker(DoWork); //开启多线程操作
+		std::threadpool pool(4);
+		std::vector< std::future<int> > results;
 
-    std::cin.get(); //此时工作线程在疯狂循环打印，而主线程此时被cin.get()阻塞
-    is_Finished = true;// 让worker线程终止的条件，如果按下回车，则会修改该值，间接影响到另一个线程的工作。
+		for (int i = 0; i < 8; ++i) {
+			results.emplace_back(
+				pool.commit([i] {
+					std::cout << "hello " << i << std::endl;
+					std::this_thread::sleep_for(std::chrono::seconds(1));
+					std::cout << "world " << i << std::endl;
+					return i*i;
+				})
+			);
+		}
+		std::cout << " =======  commit all2 ========= " << std::this_thread::get_id() << std::endl;
 
-    worker.join();  //join:等待工作线程结束后，才会执行接下来的操作
-
-    printf("HelloWorld!\n");
-    class student stu1;
-    class student stu2(1,0,90);
-    stu1.init();
-    student *p = &stu1;
-    stu1.display();
-    p->display();
-    printf("%s\n",p->school);
-
-    p = &stu2;
-    stu2.display();
-    p->display();
-    printf("%s\n",p->school);
-    
-    double d = 3.1415926;
-    int x = static_cast<int>(d);
-    student stu[3] = 
-    {
-        student(3,4,5),
-        student(4,5,6),
-        student(5,6,7)
-    };
-    std::cout<<"stu[0] is " << stu[0].school <<std::endl;
-    return 0;
+		for (auto && result : results)
+			std::cout << result.get() << ' ';
+		std::cout << std::endl;
+		return 0;
+	}
+catch (std::exception& e) {
+	std::cout << "some unhappy happened...  " << std::this_thread::get_id() << e.what() << std::endl;
 }
