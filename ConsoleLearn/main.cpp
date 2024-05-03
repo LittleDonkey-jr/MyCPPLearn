@@ -47,6 +47,7 @@ int main()
 		t1.add_Timer(150, std::bind(func, 5));
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
+	std::cout << "nothing\n";
 
 	test_Thread_Safe_Queue();
 	
